@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import datetime
 import argparse
 import getpass
+from pprint import pprint
 
 from dateutil.parser import parse as parse_date
 from dateutil.relativedelta import relativedelta
@@ -130,12 +131,12 @@ class MasterPatientPage(JsonPage):
 
 
 class Doctolib(LoginBrowser):
-    BASEURL = 'https://www.doctolib.fr'
+    BASEURL = 'https://www.doctolib.de'
 
     login = URL('/login.json', LoginPage)
-    centers = URL(r'/vaccination-covid-19/(?P<where>\w+)', CentersPage)
+    centers = URL(r'/impfung-covid-19-corona/(?P<where>\w+)', CentersPage)
     center_result = URL(r'/search_results/(?P<id>\d+).json', CenterResultPage)
-    center = URL(r'/centre-de-sante/.*', CenterPage)
+    center = URL(r'/institut/.*', CenterPage)
     center_booking = URL(r'/booking/(?P<center_id>.+).json', CenterBookingPage)
     availabilities = URL(r'/availabilities.json', AvailabilitiesPage)
     second_shot_availabilities = URL(r'/second_shot_availabilities.json', AvailabilitiesPage)
@@ -169,7 +170,7 @@ class Doctolib(LoginBrowser):
         return self._logged
 
     def do_login(self):
-        self.open('https://www.doctolib.fr/sessions/new')
+        self.open('https://www.doctolib.de/sessions/new')
         try:
             self.login.go(json={'kind': 'patient',
                                 'username': self.username,
@@ -184,7 +185,7 @@ class Doctolib(LoginBrowser):
     def find_centers(self, where):
         for city in where:
             try:
-                self.centers.go(where=city, params={'ref_visit_motive_ids[]': ['6970', '7005']})
+                self.centers.go(where=city, params={'ref_visit_motive_ids[]': ['6768', '6936', '7109', '7978']})
             except ServerError as e:
                 if e.response.status_code in [503]:
                     return None
@@ -192,7 +193,7 @@ class Doctolib(LoginBrowser):
                     raise e
 
             for i in self.page.iter_centers_ids():
-                page = self.center_result.open(id=i, params={'limit': '4', 'ref_visit_motive_ids[]': ['6970', '7005'], 'speciality_id': '5494', 'search_result_format': 'json'})
+                page = self.center_result.open(id=i, params={'limit': '4', 'ref_visit_motive_ids[]': ['6768', '6936', '7109', '7978'], 'speciality_id': '5494', 'search_result_format': 'json'})
                 # XXX return all pages even if there are no indicated availabilities.
                 #for a in page.doc['availabilities']:
                 #    if len(a['slots']) > 0:
@@ -201,6 +202,13 @@ class Doctolib(LoginBrowser):
                     yield page.doc['search_result']
                 except KeyError:
                     pass
+
+        for center_id in [158431, 158434, 158437, 158435, 158436, 158433]:
+            yield {
+                'city': 'Berlin',
+                'name_with_title': f'Impfzentrum {center_id}',
+                'url': f'/institut/berlin/ciz-berlin-berlin?pid=practice-{center_id}'
+            }
 
     def get_patients(self):
         self.master_patient.go()
@@ -215,7 +223,7 @@ class Doctolib(LoginBrowser):
 
         center_page = self.center_booking.go(center_id=center_id)
         profile_id = self.page.get_profile_id()
-        motive_id = self.page.find_motive(r'1re.*(Pfizer|Moderna)')
+        motive_id = self.page.find_motive(r'(Pfizer|Moderna)')
 
         if not motive_id:
             log('Unable to find ARNm motive')
@@ -338,7 +346,7 @@ class Doctolib(LoginBrowser):
         self.appointment_post.go(id=a_id, data=json.dumps(data), headers=headers, method='PUT')
 
         if 'redirection' in self.page.doc:
-            log('Go on %s to complete', 'https://www.doctolib.fr' + self.page.doc['redirection'])
+            log('Go on %s to complete', 'https://www.doctolib.de' + self.page.doc['redirection'])
 
         self.appointment_post.go(id=a_id)
 
@@ -389,8 +397,11 @@ class Application:
             docto.patient = patients[0]
 
         cities = args.city.lower().split(',')
+        centers = list(docto.find_centers(cities))
+        print('Possible centers:')
+        pprint(centers)
         while True:
-            for center in docto.find_centers(cities):
+            for center in centers:
                 if center['city'].lower() not in cities:
                     continue
 
