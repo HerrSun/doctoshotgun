@@ -26,6 +26,9 @@ from woob.browser.url import URL
 from woob.browser.pages import JsonPage, HTMLPage
 
 
+WAIT_SECS = 30
+
+
 def log(text, *args):
     args = (colored(arg, 'yellow') for arg in args)
     text = text % tuple(args)
@@ -186,31 +189,32 @@ class Doctolib(LoginBrowser):
         return True
 
     def find_centers(self, where):
-        for city in where:
-            try:
-                self.centers.go(where=city, params={'ref_visit_motive_ids[]': ['6768', '6936', '7109', '7978']})
-            except ServerError as e:
-                if e.response.status_code in [503]:
-                    return None
-                else:
-                    raise e
+        #for city in where:
+        #    try:
+        #        self.centers.go(where=city, params={'ref_visit_motive_ids[]': ['6768', #'6936', '7109', '7978']})
+        #    except ServerError as e:
+        #        if e.response.status_code in [503]:
+        #            return None
+        #        else:
+        #            raise e
+        #
+        #    for i in self.page.iter_centers_ids():
+        #        page = self.center_result.open(id=i, params={'limit': '4', #'ref_visit_motive_ids[]': ['6768', '6936', '7109', '7978'], #'speciality_id': '5494', 'search_result_format': 'json'})
+        #        # XXX return all pages even if there are no indicated availabilities.
+        #        #for a in page.doc['availabilities']:
+        #        #    if len(a['slots']) > 0:
+        #        #        yield page.doc['search_result']
+        #        try:
+        #            yield page.doc['search_result']
+        #        except KeyError:
+        #            pass
 
-            for i in self.page.iter_centers_ids():
-                page = self.center_result.open(id=i, params={'limit': '4', 'ref_visit_motive_ids[]': ['6768', '6936', '7109', '7978'], 'speciality_id': '5494', 'search_result_format': 'json'})
-                # XXX return all pages even if there are no indicated availabilities.
-                #for a in page.doc['availabilities']:
-                #    if len(a['slots']) > 0:
-                #        yield page.doc['search_result']
-                try:
-                    yield page.doc['search_result']
-                except KeyError:
-                    pass
-
-        for center_id in [158431, 158434, 158437, 158435, 158436, 158433]:
+        for center_id, place in [(158431, '1. Arena Berlin'), (158434, '2. Messe Berlin/ Halle 21'), (158437, '6. Erika-Heß-Eisstadion'), (158435, '5. Velodrom Berlin'), (158436, '3. Flughafen Berlin-Tegel/ Terminal C'), (158433, '4. Flughafen Tempelhof/ Hangar 4')]:
             yield {
                 'city': 'Berlin',
                 'name_with_title': f'Impfzentrum {center_id}',
-                'url': f'/institut/berlin/ciz-berlin-berlin?pid=practice-{center_id}'
+                'url': f'/institut/berlin/ciz-berlin-berlin?pid=practice-{center_id}',
+                'place': place
             }
 
     def get_patients(self):
@@ -234,6 +238,12 @@ class Doctolib(LoginBrowser):
             return False
 
         for place in self.page.get_places():
+            try:
+                if center['place'] != place['name']:
+                    log('Skipping place %s', place['name'])
+                    continue
+            except KeyError:
+                pass
             log('Looking for slots in place %s', place['name'])
             practice_id = place['practice_ids'][0]
             agenda_ids = center_page.get_agenda_ids(motive_id, practice_id)
@@ -385,8 +395,8 @@ class Application:
                     return 1
                 login_request_received_response = True
             except (ConnectionError, NewConnectionError, MaxRetryError):
-                log('ConnectionError during login, waiting 10 seconds')
-                sleep(10)
+                log(f'ConnectionError during login, waiting {WAIT_SECS} seconds')
+                sleep(WAIT_SECS)
 
         patients = docto.get_patients()
         if len(patients) == 0:
@@ -427,8 +437,8 @@ class Application:
                     sleep(1)
 
             except (ConnectionError, NewConnectionError, MaxRetryError, ReadTimeout):
-                log('Error while finding an appointment, waiting 10 seconds')
-                sleep(10)
+                log(f'Error while finding an appointment, waiting {WAIT_SECS} seconds')
+                sleep(WAIT_SECS)
 
             sleep(5)
 
